@@ -74,7 +74,7 @@ jobs:
           if [[ -f package.json ]]; then npm test -- --ci --reporters=default || true; fi
 
       - name: Compliance guardrails (Polygon)
-        uses: ./.github/actions/compliance-guardrail
+        uses: Sigmatiq/.github/.github/actions/compliance-guardrail@main
 
       - name: Security scan (pip)
         if: inputs.use-python == true
