@@ -1,0 +1,89 @@
+name: Reusable CI (Lint, Test, Security, Compliance)
+
+on:
+  workflow_call:
+    inputs:
+      use-python:
+        required: false
+        type: boolean
+        default: true
+      python-version:
+        required: false
+        type: string
+        default: '3.11'
+      use-node:
+        required: false
+        type: boolean
+        default: false
+      node-version:
+        required: false
+        type: string
+        default: '20'
+    secrets:
+      ADDITIONAL_PYPI_TOKEN:
+        required: false
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        if: inputs.use-python == true
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ inputs.python-version }}
+
+      - name: Install Python deps
+        if: inputs.use-python == true
+        shell: bash
+        run: |
+          python -m pip install --upgrade pip
+          if [[ -f requirements.txt ]]; then pip install -r requirements.txt; fi
+          if [[ -f requirements-all.txt ]]; then pip install -r requirements-all.txt; fi
+
+      - name: Setup Node
+        if: inputs.use-node == true
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node-version }}
+          cache: 'npm'
+
+      - name: Install Node deps
+        if: inputs.use-node == true && hash('npm')
+        run: |
+          if [[ -f package-lock.json ]]; then npm ci; elif [[ -f package.json ]]; then npm install; fi
+
+      - name: Lint (Python)
+        if: inputs.use-python == true
+        run: |
+          pip install ruff flake8 || true
+          ruff . || true
+          flake8 . || true
+
+      - name: Lint (Node)
+        if: inputs.use-node == true
+        run: |
+          if [[ -f package.json ]]; then npm run lint || true; fi
+
+      - name: Test (Node)
+        if: inputs.use-node == true
+        run: |
+          if [[ -f package.json ]]; then npm test -- --ci --reporters=default || true; fi
+
+      - name: Compliance guardrails (Polygon)
+        uses: ./.github/actions/compliance-guardrail
+
+      - name: Security scan (pip)
+        if: inputs.use-python == true
+        run: |
+          pip install pip-audit || true
+          pip-audit || true
+
+      - name: Security scan (npm)
+        if: inputs.use-node == true
+        run: |
+          if [[ -f package.json ]]; then npm audit --audit-level=high || true; fi
+

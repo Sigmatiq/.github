@@ -1,0 +1,61 @@
+name: Polygon Compliance Guardrail
+description: Fails if code exposes raw Polygon data (quotes/bars/options chain) or disallowed step kinds.
+author: sigmatiq
+branding:
+  icon: shield
+  color: red
+
+inputs:
+  paths:
+    description: Space-separated paths to scan (defaults to repo root)
+    required: false
+    default: .
+  fail-on-found:
+    description: Exit non-zero when a violation is found
+    required: false
+    default: 'true'
+
+runs:
+  using: composite
+  steps:
+    - name: Run compliance scan
+      shell: bash
+      run: |
+        set -euo pipefail
+        IFS=' ' read -r -a SCAN_PATHS <<< "${{ inputs.paths }}"
+
+        echo "Scanning paths: ${SCAN_PATHS[*]}"
+        TMPFILE=$(mktemp)
+
+        # File extensions considered code/config
+        exts='(py|ts|tsx|js|json|yml|yaml)'
+
+        # Grep patterns to block
+        declare -a patterns=(
+          'step_kind[[:space:]]*:[[:space:]]*polygon_raw_fetch'
+          'step_kind[[:space:]]*:[[:space:]]*market_data_proxy'
+          '/polygon/(quotes|bars|options/chain)'
+        )
+
+        violations=0
+        for p in "${patterns[@]}"; do
+          # Use grep to search only code-like files
+          if grep -RInE --exclude-dir={.git,node_modules,dist,build,.venv,venv,docs} --include="*.py" --include="*.ts" --include="*.tsx" --include="*.js" --include="*.json" --include="*.yml" --include="*.yaml" "$p" "${SCAN_PATHS[@]}" > "$TMPFILE" 2>/dev/null; then
+            echo "Violation pattern matched: $p"
+            cat "$TMPFILE"
+            echo "---"
+            violations=$((violations+1))
+          fi
+        done
+
+        rm -f "$TMPFILE"
+
+        if [[ $violations -gt 0 ]]; then
+          echo "Compliance violations detected: $violations"
+          if [[ "${{ inputs.fail-on-found }}" == "true" ]]; then
+            exit 2
+          fi
+        else
+          echo "Compliance check passed."
+        fi
+
