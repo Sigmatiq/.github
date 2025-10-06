@@ -52,7 +52,7 @@ jobs:
           cache: 'npm'
 
       - name: Install Node deps
-        if: inputs.use-node == true && hash('npm')
+        if: inputs.use-node == true
         run: |
           if [[ -f package-lock.json ]]; then npm ci; elif [[ -f package.json ]]; then npm install; fi
 
