@@ -49,15 +49,15 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: ${{ inputs.python-version }}
+          python-version: ${{ inputs['python-version'] }}
 
       - name: Bump version (pyproject.toml)
-        if: inputs.bump-version == true
+        if: ${{ inputs['bump-version'] == true }}
         id: bump
-        working-directory: ${{ inputs.package-dir }}
+        working-directory: ${{ inputs['package-dir'] }}
         run: |
           set -euo pipefail
-          LEVEL="${{ inputs.bump-level }}"
+          LEVEL="${{ inputs['bump-level'] }}"
           echo "Bumping version ($LEVEL) in pyproject.toml"
           python - << 'PY'
 import re, sys, os
@@ -75,7 +75,7 @@ if not m:
     print('No semantic version like X.Y.Z found; skipping bump', file=sys.stderr)
     sys.exit(0)
 maj, minr, pat = map(int, m.groups())
-level = "${{ inputs.bump-level }}".strip().lower()
+level = "${{ inputs['bump-level'] }}".strip().lower()
 if level == 'major':
     maj, minr, pat = maj+1, 0, 0
 elif level == 'minor':
@@ -93,10 +93,10 @@ if out:
 PY
 
       - name: Commit bumped version and tag
-        if: inputs.bump-version == true && inputs.commit-bump == true
-        working-directory: ${{ inputs.package-dir }}
+        if: ${{ inputs['bump-version'] == true && inputs['commit-bump'] == true }}
+        working-directory: ${{ inputs['package-dir'] }}
         env:
-          TAG_PREFIX: ${{ inputs.tag-prefix }}
+          TAG_PREFIX: ${{ inputs['tag-prefix'] }}
           VERSION: ${{ steps.bump.outputs.version }}
         run: |
           set -euo pipefail
@@ -109,18 +109,18 @@ PY
           git push --follow-tags
 
       - name: Build wheel and sdist
-        working-directory: ${{ inputs.package-dir }}
+        working-directory: ${{ inputs['package-dir'] }}
         run: |
           python -m pip install --upgrade pip
           python -m pip install build
           python -m build
 
       - name: Publish to Azure Artifacts PyPI
-        working-directory: ${{ inputs.package-dir }}
+        working-directory: ${{ inputs['package-dir'] }}
         env:
           TWINE_USERNAME: az
           TWINE_PASSWORD: ${{ secrets.AZURE_ARTIFACTS_PAT }}
-          TWINE_REPOSITORY_URL: ${{ inputs.upload-url }}
+          TWINE_REPOSITORY_URL: ${{ inputs['upload-url'] }}
         run: |
           python -m pip install twine
           python -m twine upload --non-interactive dist/*
