@@ -1,0 +1,112 @@
+name: Reusable Publish Node
+
+on:
+  workflow_call:
+    inputs:
+      node-version:
+        required: false
+        type: string
+        default: '20'
+      package-dir:
+        required: false
+        type: string
+        default: '.'
+      registry-url:
+        required: false
+        type: string
+        default: 'https://registry.npmjs.org'
+      bump-version:
+        description: 'Bump version before publishing'
+        required: false
+        type: boolean
+        default: false
+      bump-level:
+        description: 'Version bump level'
+        required: false
+        type: string
+        default: 'patch'
+      commit-bump:
+        description: 'Commit bumped version and create tag'
+        required: false
+        type: boolean
+        default: false
+      tag-prefix:
+        description: 'Tag prefix (e.g., v)'
+        required: false
+        type: string
+        default: 'v'
+      publish-args:
+        description: 'Extra args for npm publish'
+        required: false
+        type: string
+        default: ''
+    secrets:
+      NPM_TOKEN:
+        required: true
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node-version }}
+          registry-url: ${{ inputs.registry-url }}
+          cache: 'npm'
+
+      - name: Configure npm auth
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          npm config set //${{ inputs.registry-url#*// }}:._authToken=$NODE_AUTH_TOKEN || true
+
+      - name: Install dependencies
+        working-directory: ${{ inputs.package-dir }}
+        run: |
+          if [ -f package-lock.json ]; then npm ci; elif [ -f package.json ]; then npm install; fi
+
+      - name: Bump version
+        if: inputs.bump-version == true
+        id: bump
+        working-directory: ${{ inputs.package-dir }}
+        env:
+          COMMIT_BUMP: ${{ inputs.commit-bump }}
+        run: |
+          set -euo pipefail
+          level="${{ inputs.bump-level }}"
+          if [ "${COMMIT_BUMP}" = "true" ]; then
+            npm version "$level" -m "chore(release): bump version to %s"
+          else
+            npm version "$level" --no-git-tag-version
+          fi
+          v=$(node -p "require('./package.json').version")
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+
+      - name: Commit and tag (if bump without commit)
+        if: inputs.bump-version == true && inputs.commit-bump == false
+        working-directory: ${{ inputs.package-dir }}
+        env:
+          TAG_PREFIX: ${{ inputs.tag-prefix }}
+          VERSION: ${{ steps.bump.outputs.version }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add package.json package-lock.json || true
+          git commit -m "chore(release): bump version to ${VERSION}"
+          git tag "${TAG_PREFIX}${VERSION}" -m "Release ${VERSION}"
+          git push --follow-tags
+
+      - name: Publish
+        working-directory: ${{ inputs.package-dir }}
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          set -euo pipefail
+          npm publish ${{ inputs.publish-args }}
