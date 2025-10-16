@@ -15,6 +15,26 @@ on:
         required: false
         type: string
         default: 'https://pkgs.dev.azure.com/sigmatiq/_packaging/Sigmatiq/pypi/upload/'
+      bump-version:
+        description: 'Bump version before publishing'
+        required: false
+        type: boolean
+        default: false
+      bump-level:
+        description: 'Version bump level'
+        required: false
+        type: string
+        default: 'patch'
+      commit-bump:
+        description: 'Commit bumped version and create tag'
+        required: false
+        type: boolean
+        default: false
+      tag-prefix:
+        description: 'Tag prefix (e.g., v)'
+        required: false
+        type: string
+        default: 'v'
     secrets:
       AZURE_ARTIFACTS_PAT:
         required: true
@@ -30,6 +50,63 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: ${{ inputs.python-version }}
+
+      - name: Bump version (pyproject.toml)
+        if: inputs.bump-version == true
+        id: bump
+        working-directory: ${{ inputs.package-dir }}
+        run: |
+          set -euo pipefail
+          LEVEL="${{ inputs.bump-level }}"
+          echo "Bumping version ($LEVEL) in pyproject.toml"
+          python - << 'PY'
+import re, sys, os
+from pathlib import Path
+p = Path('pyproject.toml')
+if not p.exists():
+    print('pyproject.toml not found; skipping bump', file=sys.stderr)
+    sys.exit(0)
+s = p.read_text(encoding='utf-8')
+m = re.search(r"(?m)^version\s*=\s*\"(\\d+)\\.(\\d+)\\.(\\d+)\"\s*$", s)
+if not m:
+    # Try under [project]
+    m = re.search(r"(?m)^\s*version\s*=\s*\"(\\d+)\\.(\\d+)\\.(\\d+)\"", s)
+if not m:
+    print('No semantic version like X.Y.Z found; skipping bump', file=sys.stderr)
+    sys.exit(0)
+maj, minr, pat = map(int, m.groups())
+level = "${{ inputs.bump-level }}".strip().lower()
+if level == 'major':
+    maj, minr, pat = maj+1, 0, 0
+elif level == 'minor':
+    minr, pat = minr+1, 0
+else:
+    pat = pat+1
+new = f"{maj}.{minr}.{pat}"
+news = re.sub(m.re, f'version = "{new}"', s, count=1)
+p.write_text(news, encoding='utf-8')
+print('Bumped version to', new)
+out = os.environ.get('GITHUB_OUTPUT')
+if out:
+    with open(out, 'a', encoding='utf-8') as fh:
+        fh.write(f"version={new}\n")
+PY
+
+      - name: Commit bumped version and tag
+        if: inputs.bump-version == true && inputs.commit-bump == true
+        working-directory: ${{ inputs.package-dir }}
+        env:
+          TAG_PREFIX: ${{ inputs.tag-prefix }}
+          VERSION: ${{ steps.bump.outputs.version }}
+        run: |
+          set -euo pipefail
+          if [ -z "${VERSION:-}" ]; then echo "No version from bump step; skipping commit"; exit 0; fi
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add pyproject.toml
+          git commit -m "chore(release): bump version to ${VERSION}"
+          git tag "${TAG_PREFIX}${VERSION}" -m "Release ${VERSION}"
+          git push --follow-tags
 
       - name: Build wheel and sdist
         working-directory: ${{ inputs.package-dir }}

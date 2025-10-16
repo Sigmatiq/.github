@@ -30,16 +30,18 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Python
-        if: inputs.use-python == true
-        uses: actions/setup-python@v5
+  - name: Setup Python
+    if: inputs.use-python == true
+    uses: actions/setup-python@v5
+    with:
+      python-version: ${{ inputs.python-version }}
 
-      - name: Configure pip index (Azure Artifacts)
-        if: inputs.use-python == true
-        shell: bash
-        env:
-          AZURE_ARTIFACTS_PAT: ${{ secrets.AZURE_ARTIFACTS_PAT }}
-        run: |
+  - name: Configure pip index (Azure Artifacts)
+    if: inputs.use-python == true
+    shell: bash
+    env:
+      AZURE_ARTIFACTS_PAT: ${{ secrets.AZURE_ARTIFACTS_PAT }}
+    run: |
           mkdir -p ~/.config/pip
           if [ -n "$AZURE_ARTIFACTS_PAT" ]; then
             printf "[global]
@@ -50,8 +52,6 @@ extra-index-url = https://az:%s@pkgs.dev.azure.com/sigmatiq/_packaging/Sigmatiq/
 extra-index-url = https://pkgs.dev.azure.com/sigmatiq/_packaging/Sigmatiq/pypi/simple/
 " > ~/.config/pip/pip.conf
           fi
-        with:
-          python-version: ${{ inputs.python-version }}
 
       - name: Install Python deps
         if: inputs.use-python == true
